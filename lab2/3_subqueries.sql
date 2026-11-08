@@ -1,37 +1,28 @@
--- ЛР 2. Часть 3. Подзапросы и поиск нетривиальных ситуаций.
--- «Состоявшаяся попытка» = status 'completed' или 'absent' (неявка тоже считается попыткой).
--- «Курс сдан» = есть запись 'completed' с оценкой >= 3.
+-- попытка = экзамен со статусом completed или absent (неявка тоже считается)
+-- курс сдан = есть оценка 3 и выше
 
--- 3.1. Сравнение с вычисляемым показателем:
--- студенты, чей средний балл выше среднего балла их собственной группы.
-WITH student_avg AS (
-    SELECT s.student_id, s.group_id, AVG(er.grade) AS avg_grade
-    FROM students s
-    JOIN exam_results er ON er.student_id = s.student_id
-    WHERE er.status = 'completed'
-    GROUP BY s.student_id, s.group_id
-)
+-- 3.1 студенты, у которых средний балл выше, чем средний балл по их группе
 SELECT
     g.group_name,
     s.last_name || ' ' || s.first_name AS student,
-    ROUND(sa.avg_grade, 2)             AS student_avg,
-    ROUND(ga.avg_grade, 2)             AS group_avg
-FROM student_avg sa
-JOIN (   -- подзапрос: средний балл по каждой группе (группа сравнения)
-    SELECT s2.group_id, AVG(er2.grade) AS avg_grade
+    ROUND(AVG(er.grade), 2)            AS student_avg
+FROM students s
+JOIN academic_groups g ON g.group_id   = s.group_id
+JOIN exam_results er   ON er.student_id = s.student_id
+WHERE er.status = 'completed'
+GROUP BY g.group_id, g.group_name, s.student_id, s.last_name, s.first_name
+HAVING AVG(er.grade) > (
+    -- средний балл всей группы этого студента
+    SELECT AVG(er2.grade)
     FROM exam_results er2
     JOIN students s2 ON s2.student_id = er2.student_id
-    WHERE er2.status = 'completed'
-    GROUP BY s2.group_id
-) ga ON ga.group_id = sa.group_id
-JOIN students        s ON s.student_id = sa.student_id
-JOIN academic_groups g ON g.group_id   = sa.group_id
-WHERE sa.avg_grade > ga.avg_grade
+    WHERE s2.group_id = g.group_id
+      AND er2.status = 'completed'
+)
 ORDER BY g.group_name, student_avg DESC;
 
 
--- 3.2. EXISTS: студенты, у которых была хотя бы одна «двойка»,
--- но этот же курс впоследствии был ими пересдан (закрытая задолженность).
+-- 3.2 двойки, которые студент потом пересдал (есть более поздняя оценка 3+ по тому же курсу)
 SELECT
     s.last_name || ' ' || s.first_name AS student,
     c.course_name,
@@ -52,10 +43,8 @@ WHERE er.grade = 2
 ORDER BY student, failed_on;
 
 
--- 3.3. NOT EXISTS: текущие академические задолженности.
--- Студент уже пытался сдать курс (была состоявшаяся попытка: «двойка» или неявка),
--- но положительной оценки по этому курсу у него НЕТ.
--- Отсутствие события «курс сдан» здесь означает долг, который нужно закрыть.
+-- 3.3 текущие долги: студент уже пытался сдать курс (двойка или неявка),
+-- но положительной оценки по нему так и нет
 SELECT
     g.group_name,
     s.last_name || ' ' || s.first_name AS student,
@@ -75,12 +64,12 @@ WHERE er.status IN ('completed', 'absent')
         AND r.status = 'completed'
         AND r.grade >= 3
   )
-GROUP BY g.group_name, student, c.course_name
+GROUP BY g.group_name, s.student_id, s.last_name, s.first_name, c.course_name
 ORDER BY g.group_name, student;
 
 
--- 3.4. Коррелированный подзапрос: индивидуальные показатели каждого студента.
--- Каждый подзапрос в SELECT выполняется для текущей строки s (s.student_id).
+-- 3.4 карточка каждого студента: попытки, средний балл, сколько курсов сдано, ближайший экзамен
+-- каждый подзапрос считается для текущего студента s
 SELECT
     s.last_name || ' ' || s.first_name AS student,
     g.group_name,

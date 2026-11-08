@@ -1,26 +1,20 @@
--- ЛР 2. Задание 1.1. Дополнение базы содержательным набором данных.
--- Ссылки на группы/студентов/курсы ищутся по естественным ключам
--- (group_name, email, course_name), а не по числовым id: после неудачных
--- INSERT из constraints_test.sql счётчики SERIAL могли «сдвинуться».
-
--- ---------- Группы ----------
--- ПМИ-108 - первокурсники 2026 г.: экзаменов у них ещё не было (нет связанных операций)
+-- новые группы, у ПМИ-108 (первый курс) экзаменов ещё не было
 INSERT INTO academic_groups (group_name, enrollment_year) VALUES
-('ПМИ-206', 2025),
 ('ПМИ-406', 2023),
-('ПМИ-108', 2026)
-ON CONFLICT (group_name) DO NOTHING;
+('ПМИ-108', 2026);
 
--- ---------- Преподаватели ----------
--- Волкова пока не ведёт ни одного курса
+-- ПМИ-206 могла уже добавиться в ЛР1 (constraints_test.sql), поэтому вставляем только если её нет
+INSERT INTO academic_groups (group_name, enrollment_year)
+SELECT 'ПМИ-206', 2025
+WHERE NOT EXISTS (SELECT 1 FROM academic_groups WHERE group_name = 'ПМИ-206');
+
+-- преподаватели, Волкова пока не ведёт ни одного курса
 INSERT INTO professors (first_name, last_name, department) VALUES
 ('Ольга', 'Кузнецова', 'Кафедра вычислительной математики и программирования'),
 ('Андрей', 'Соколов', 'Кафедра теории вероятностей'),
 ('Мария', 'Волкова', 'Кафедра иностранных языков');
 
--- ---------- Курсы ----------
--- «Философия» без преподавателя (professor_id = NULL), минимальные кредиты;
--- «Машинное обучение» - курс, по которому ещё не было экзаменов
+-- курсы, у Философии нет преподавателя, по Машинному обучению экзаменов ещё не было
 INSERT INTO courses (course_name, credits, professor_id) VALUES
 ('Базы данных',          5, (SELECT professor_id FROM professors WHERE last_name = 'Кузнецова')),
 ('Теория вероятностей',  6, (SELECT professor_id FROM professors WHERE last_name = 'Соколов')),
@@ -29,15 +23,15 @@ INSERT INTO courses (course_name, credits, professor_id) VALUES
 ('Философия',            1, NULL),
 ('Машинное обучение',    4, (SELECT professor_id FROM professors WHERE last_name = 'Соколов'));
 
--- ---------- Студенты ----------
+-- студенты, группу ищем по названию, а не по id (id после ошибок в constraints_test могли сдвинуться)
 INSERT INTO students (first_name, last_name, email, group_id, birth_date)
-SELECT v.first_name, v.last_name, v.email, g.group_id, v.birth_date::date
+SELECT v.first_name, v.last_name, v.email, g.group_id, CAST(v.birth_date AS DATE)
 FROM (VALUES
     ('Анна',     'Орлова',     'anna.orlova@example.com',        'ПМИ-306', '2006-03-12'),
     ('Дмитрий',  'Козлов',     'dmitry.kozlov@example.com',      'ПМИ-306', '2005-09-30'),
     ('Елена',    'Морозова',   'elena.morozova@example.com',     'ПМИ-306', '2006-07-04'),
     ('Сергей',   'Новиков',    'sergey.novikov@example.com',     'ПМИ-306', '2005-12-01'),
-    ('Ксения',   'Лебедева',   'ksenia.lebedeva@example.com',    'ПМИ-306', '2006-01-19'), -- переведена, экзаменов нет
+    ('Ксения',   'Лебедева',   'ksenia.lebedeva@example.com',    'ПМИ-306', '2006-01-19'), -- перевелась, экзаменов нет
     ('Мария',    'Павлова',    'maria.pavlova@example.com',      'ПМИ-307', '2006-04-22'),
     ('Артём',    'Семёнов',    'artem.semenov@example.com',      'ПМИ-307', '2005-10-15'),
     ('Ольга',    'Фёдорова',   'olga.fedorova@example.com',      'ПМИ-307', '2006-08-09'),
@@ -60,12 +54,10 @@ FROM (VALUES
 ) AS v(first_name, last_name, email, group_name, birth_date)
 JOIN academic_groups g ON g.group_name = v.group_name;
 
--- ---------- Результаты экзаменов ----------
--- Сессии: досрочная сдача (декабрь 2025), зимняя (январь 2026), пересдачи
--- (февраль-март 2026), летняя (июнь 2026), осенние пересдачи (сентябрь 2026),
--- назначенные экзамены (ноябрь 2026 - январь 2027).
+-- результаты экзаменов: зимняя сессия, пересдачи, летняя сессия и назначенные экзамены
+-- студента ищем по email, курс по названию
 INSERT INTO exam_results (student_id, course_id, exam_date, grade, status)
-SELECT s.student_id, c.course_id, v.exam_date::date, v.grade, v.status
+SELECT s.student_id, c.course_id, CAST(v.exam_date AS DATE), v.grade, v.status
 FROM (VALUES
     -- ПМИ-306
     ('tim.pup@example.com',        'Дискретный Анализ',            '2025-12-25', 5,    'completed'),
